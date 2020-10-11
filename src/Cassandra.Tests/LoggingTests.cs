@@ -1,4 +1,20 @@
-﻿using System;
+//
+//      Copyright (C) DataStax Inc.
+//
+//   Licensed under the Apache License, Version 2.0 (the "License");
+//   you may not use this file except in compliance with the License.
+//   You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//   Unless required by applicable law or agreed to in writing, software
+//   distributed under the License is distributed on an "AS IS" BASIS,
+//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//   See the License for the specific language governing permissions and
+//   limitations under the License.
+//
+
+using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
@@ -10,23 +26,50 @@ namespace Cassandra.Tests
     [TestFixture]
     public class LoggingTests
     {
+        private TraceLevel _originalTraceLevelSwitch;
+
         [Test]
         public void FactoryBasedLoggerHandler_Methods_Not_Throw()
         {
             UseAllMethods(new Logger.FactoryBasedLoggerHandler(typeof(int)));
         }
 
+        [SetUp]
+        public void TestSetup()
+        {
+            _originalTraceLevelSwitch = Diagnostics.CassandraTraceSwitch.Level;
+        }
+
+        [TearDown]
+        public void TestTearDown()
+        {
+            Diagnostics.CassandraTraceSwitch.Level = _originalTraceLevelSwitch;
+        }
+
+        [Test]
+        public void Initialization_Should_Log_Driver_Version()
+        {
+            Diagnostics.CassandraTraceSwitch.Level = TraceLevel.Info;
+            var listener = new TestTraceListener();
+            Trace.Listeners.Add(listener);
+            var builder = Cluster.Builder().AddContactPoint(TestHelper.UnreachableHostAddress).Build();
+            // No host available
+            Assert.Throws<NoHostAvailableException>(() => builder.Connect());
+
+            // The name and version should be logged
+            var message = listener.Messages.Values.First(m => m.Contains("Connecting to cluster using"));
+            StringAssert.IsMatch("DataStax .*Driver .*v\\d+\\.\\d+\\.\\d+\\.\\d+", message);
+        }
+
         [Test]
         public void FactoryBasedLoggerHandler_Methods_Should_Output_To_Trace()
         {
-            var originalLevel = Diagnostics.CassandraTraceSwitch.Level;
             Diagnostics.CassandraTraceSwitch.Level = TraceLevel.Verbose;
             var listener = new TestTraceListener();
             Trace.Listeners.Add(listener);
             var loggerHandler = new Logger.TraceBasedLoggerHandler(typeof(int));
             UseAllMethods(loggerHandler);
             Trace.Listeners.Remove(listener);
-            Diagnostics.CassandraTraceSwitch.Level = originalLevel;
             Assert.AreEqual(6, listener.Messages.Count);
             var expectedMessages = new[]
             {
@@ -47,29 +90,21 @@ namespace Cassandra.Tests
         [Test]
         public void FactoryBasedLoggerHandler_LogError_Handles_Concurrent_Calls()
         {
-            var originalLevel = Diagnostics.CassandraTraceSwitch.Level;
-            try
-            {
-                Diagnostics.CassandraTraceSwitch.Level = TraceLevel.Verbose;
-                var listener = new TestTraceListener();
-                Trace.Listeners.Add(listener);
-                var loggerHandler = new Logger.TraceBasedLoggerHandler(typeof(int));
-                UseAllMethods(loggerHandler);
-                Trace.Listeners.Remove(listener);
-                Assert.AreEqual(6, listener.Messages.Count);
-                var actions = Enumerable
-                    .Repeat(true, 1000)
-                    .Select<bool, Action>((_, index) => () =>
-                    {
-                        loggerHandler.Error(new ArgumentException("Test exception " + index,
-                            new Exception("Test inner exception")));
-                    });
-                TestHelper.ParallelInvoke(actions);
-            }
-            finally
-            {
-                Diagnostics.CassandraTraceSwitch.Level = originalLevel;
-            }
+            Diagnostics.CassandraTraceSwitch.Level = TraceLevel.Verbose;
+            var listener = new TestTraceListener();
+            Trace.Listeners.Add(listener);
+            var loggerHandler = new Logger.TraceBasedLoggerHandler(typeof(int));
+            UseAllMethods(loggerHandler);
+            Trace.Listeners.Remove(listener);
+            Assert.AreEqual(6, listener.Messages.Count);
+            var actions = Enumerable
+                .Repeat(true, 1000)
+                .Select<bool, Action>((_, index) => () =>
+                {
+                    loggerHandler.Error(new ArgumentException("Test exception " + index,
+                        new Exception("Test inner exception")));
+                });
+            TestHelper.ParallelInvoke(actions);
         }
 
         private void UseAllMethods(Logger.ILoggerHandler loggerHandler)
@@ -82,9 +117,10 @@ namespace Cassandra.Tests
             loggerHandler.Warning("Message 5 {0}", "Param4");
         }
 
-        private class TestTraceListener : TraceListener
+        internal class TestTraceListener : TraceListener
         {
             public readonly ConcurrentDictionary<int, string> Messages = new ConcurrentDictionary<int, string>();
+
             private int _counter = -1;
 
             public override void Write(string message)

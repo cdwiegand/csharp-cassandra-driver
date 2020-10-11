@@ -1,7 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+//
+//      Copyright (C) DataStax Inc.
+//
+//   Licensed under the Apache License, Version 2.0 (the "License");
+//   you may not use this file except in compliance with the License.
+//   You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//   Unless required by applicable law or agreed to in writing, software
+//   distributed under the License is distributed on an "AS IS" BASIS,
+//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//   See the License for the specific language governing permissions and
+//   limitations under the License.
+//
+
+using System;
 using System.Threading.Tasks;
 using Cassandra.Data.Linq;
 using Cassandra.Mapping;
@@ -28,22 +41,47 @@ namespace Cassandra.Tests.Mapping
 
         protected IMapper GetMappingClient(Func<Task<RowSet>> getRowSetFunc, Action<string, object[]> queryCallback, MappingConfiguration config = null)
         {
+            return GetMappingClientAndSession(getRowSetFunc, queryCallback, config).Mapper;
+        }
+
+        protected MapperAndSessionTuple GetMappingClientAndSession(RowSet rowset, MappingConfiguration config = null)
+        {
+            return GetMappingClientAndSession(() => TaskHelper.ToTask(rowset), config);
+        }
+
+        protected MapperAndSessionTuple GetMappingClientAndSession(Func<Task<RowSet>> getRowSetFunc, MappingConfiguration config = null)
+        {
+            return GetMappingClientAndSession(getRowSetFunc, null, config);
+        }
+        
+        protected MapperAndSessionTuple GetMappingClientAndSession(Func<Task<RowSet>> getRowSetFunc, Action<string, object[]> queryCallback, MappingConfiguration config = null)
+        {
             if (queryCallback == null)
             {
                 //noop
                 queryCallback = (q, p) => { };
             }
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>()))
                 .Returns(getRowSetFunc)
                 .Callback<BoundStatement>(s => queryCallback(s.PreparedStatement.Cql, s.QueryValues))
                 .Verifiable();
             sessionMock
+                .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>(), It.IsAny<string>()))
+                .Returns(getRowSetFunc)
+                .Callback<BoundStatement, string>((s, profile) => queryCallback(s.PreparedStatement.Cql, s.QueryValues))
+                .Verifiable();
+            sessionMock
                 .Setup(s => s.PrepareAsync(It.IsAny<string>()))
                 .Returns<string>(q => TaskHelper.ToTask(GetPrepared(q)))
                 .Verifiable();
-            return GetMappingClient(sessionMock, config);
+            return new MapperAndSessionTuple
+            {
+                Mapper = GetMappingClient(sessionMock, config),
+                Session = sessionMock.Object
+            };
         }
 
         protected IMapper GetMappingClient(Mock<ISession> sessionMock, MappingConfiguration config = null)
@@ -52,7 +90,9 @@ namespace Cassandra.Tests.Mapping
             {
                 config = new MappingConfiguration().Define(new FluentUserMapping());
             }
-            sessionMock.Setup(s => s.Cluster).Returns((ICluster)null);
+            var clusterMock = new Mock<ICluster>();
+            clusterMock.Setup(c => c.Configuration).Returns(new Configuration());
+            sessionMock.Setup(s => s.Cluster).Returns(clusterMock.Object);
             return new Mapper(sessionMock.Object, config);
         }
 
@@ -61,7 +101,7 @@ namespace Cassandra.Tests.Mapping
             return GetSession<BoundStatement>(rs, stmt => callback(stmt.PreparedStatement.Cql, stmt.QueryValues));
         }
 
-        protected ISession GetSession<TStatement>(RowSet rs, Action<TStatement> callback)
+        protected ISession GetSession<TStatement>(RowSet rs, Action<TStatement> callback, ProtocolVersion protocolVersion = ProtocolVersion.MaxSupported)
             where TStatement : IStatement
         {
             if (rs == null)
@@ -69,11 +109,25 @@ namespace Cassandra.Tests.Mapping
                 rs = new RowSet();
             }
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
-            sessionMock.Setup(s => s.Cluster).Returns((ICluster)null);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
+            var clusterMock = new Mock<ICluster>();
+            clusterMock.Setup(c => c.Configuration).Returns(new Configuration());
+            sessionMock.Setup(s => s.Cluster).Returns(clusterMock.Object);
             sessionMock
-                .Setup(s => s.ExecuteAsync(It.IsAny<TStatement>()))
+                .Setup(s => s.ExecuteAsync(It.IsAny<IStatement>()))
                 .Returns(() => TaskHelper.ToTask(rs))
                 .Callback(callback)
+                .Verifiable();
+            sessionMock
+                .Setup(s => s.ExecuteAsync(It.IsAny<IStatement>(), It.IsAny<string>()))
+                .Returns(() => TaskHelper.ToTask(rs))
+                .Callback<IStatement, string>(
+                    (stmt, execProfile) => 
+                        callback((TStatement)stmt))
+                .Verifiable();
+            sessionMock
+                .Setup(s => s.PrepareAsync(It.IsAny<string>()))
+                .Returns<string>(query => TaskHelper.ToTask(GetPrepared(query)))
                 .Verifiable();
             sessionMock
                 .Setup(s => s.PrepareAsync(It.IsAny<string>()))
@@ -81,7 +135,7 @@ namespace Cassandra.Tests.Mapping
                 .Verifiable();
             sessionMock
                 .Setup(s => s.BinaryProtocolVersion)
-                .Returns((int)ProtocolVersion.MaxSupported);
+                .Returns((int)protocolVersion);
             return sessionMock.Object;
         }
 
@@ -103,7 +157,8 @@ namespace Cassandra.Tests.Mapping
         /// </summary>
         protected PreparedStatement GetPrepared(string query = null)
         {
-            return new PreparedStatement(null, null, query, null, new Serializer(ProtocolVersion.MaxSupported));
+            return new PreparedStatement(
+                null, null, null, query, null, new SerializerManager(ProtocolVersion.MaxSupported));
         }
 
         protected void TestQueryTrace(Func<Table<AllTypesEntity>, QueryTrace> queryExecutor)
@@ -114,9 +169,18 @@ namespace Cassandra.Tests.Mapping
             clusterMock.Setup(c => c.Configuration).Returns(new Configuration());
             
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock.Setup(s => s.Cluster).Returns(clusterMock.Object);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<IStatement>()))
+                .ReturnsAsync(() => rs)
+                .Verifiable();
+            sessionMock
+                .Setup(s => s.PrepareAsync(It.IsAny<string>()))
+                .Returns<string>(query => TaskHelper.ToTask(GetPrepared(query)))
+                .Verifiable();
+            sessionMock
+                .Setup(s => s.ExecuteAsync(It.IsAny<IStatement>(), It.IsAny<string>()))
                 .ReturnsAsync(() => rs)
                 .Verifiable();
             sessionMock
@@ -144,6 +208,13 @@ namespace Cassandra.Tests.Mapping
         {
             //Clear the global mapping between tests
             MappingConfiguration.Global.Clear();
+        }
+
+        protected class MapperAndSessionTuple
+        {
+            public IMapper Mapper { get; set; }
+
+            public ISession Session { get; set; }
         }
     }
 }

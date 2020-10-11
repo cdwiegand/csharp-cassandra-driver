@@ -1,5 +1,5 @@
-﻿//
-//      Copyright (C) 2012-2014 DataStax Inc.
+//
+//      Copyright (C) DataStax Inc.
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Threading;
+using System.Text;
 using Cassandra.Requests;
+using Cassandra.Serialization;
 
 namespace Cassandra
 {
@@ -26,10 +27,14 @@ namespace Cassandra
     /// </summary>
     public abstract class Statement : IStatement
     {
+        protected const string ProxyExecuteKey = "ProxyExecute";
         private ConsistencyLevel _serialConsistency = QueryProtocolOptions.Default.SerialConsistency;
         private object[] _values;
         private bool _autoPage = true;
         private volatile int _isIdempotent = int.MinValue;
+        private volatile Host _host;
+        private string _authorizationId;
+        private IDictionary<string, byte[]> _outgoingPayload;
 
         public virtual object[] QueryValues
         {
@@ -74,7 +79,11 @@ namespace Cassandra
         }
 
         /// <inheritdoc />
-        public IDictionary<string, byte[]> OutgoingPayload { get; private set; }
+        public IDictionary<string, byte[]> OutgoingPayload
+        {
+            get { return _outgoingPayload; }
+            private set { RebuildOutgoingPayload(value); }
+        }
 
         /// <inheritdoc />
         public abstract RoutingKey RoutingKey { get; }
@@ -93,24 +102,21 @@ namespace Cassandra
             }
         }
 
-        /// <summary>
-        /// Returns the keyspace this query operates on.
-        /// <para>
-        /// Note that not all <see cref="Statement"/> implementations specify on which keyspace they operate on
-        /// so this method can return <c>null</c>.
-        /// </para>
-        /// <para>
-        /// The keyspace returned is used as a hint for token-aware routing.
-        /// </para>
-        /// </summary>
-        /// <remarks>
-        /// Consider using a <see cref="ISession"/> connected to single keyspace using 
-        /// <see cref="ICluster.Connect(string)"/>.
-        /// </remarks>
+        /// <inheritdoc />
         public virtual string Keyspace
         {
             get { return null; }
         }
+
+        /// <summary>
+        /// Gets the host configured on this <see cref="Statement"/>, or <c>null</c> if none is configured.
+        /// <para>
+        /// In the general case, the host used to execute this <see cref="Statement"/> will depend on the configured
+        /// <see cref="ILoadBalancingPolicy"/> and this property will return <c>null</c>.
+        /// </para>
+        /// <seealso cref="SetHost"/>
+        /// </summary>
+        public Host Host => _host;
 
         protected Statement()
         {
@@ -121,6 +127,34 @@ namespace Cassandra
         protected Statement(QueryProtocolOptions queryProtocolOptions)
         {
             //the unused parameter is maintained for backward compatibility
+        }
+
+        /// <inheritdoc />
+        public IStatement ExecutingAs(string userOrRole)
+        {
+            _authorizationId = userOrRole;
+            RebuildOutgoingPayload(_outgoingPayload);
+            return this;
+        }
+
+        private void RebuildOutgoingPayload(IDictionary<string, byte[]> payload)
+        {
+            if (_authorizationId == null)
+            {
+                _outgoingPayload = payload;
+                return;
+            }
+            IDictionary<string, byte[]> builder;
+            if (payload != null)
+            {
+                builder = new Dictionary<string, byte[]>(payload);
+            }
+            else
+            {
+                builder = new Dictionary<string, byte[]>(1);
+            }
+            builder[ProxyExecuteKey] = Encoding.UTF8.GetBytes(_authorizationId);
+            _outgoingPayload = builder;
         }
 
         /// <inheritdoc />
@@ -142,8 +176,9 @@ namespace Cassandra
         ///  variables. In that case, the remaining variable need to be bound before
         ///  execution. If more values than variables are provided however, an
         ///  IllegalArgumentException will be raised. </param>
+        /// <param name="serializer">Current serializer.</param>
         /// <returns>this bound statement. </returns>
-        internal virtual void SetValues(object[] values)
+        internal virtual void SetValues(object[] values, ISerializer serializer)
         {
             _values = values;
         }
@@ -220,7 +255,7 @@ namespace Cassandra
             return this;
         }
 
-        internal virtual IQueryRequest CreateBatchRequest(ProtocolVersion protocolVersion)
+        internal virtual IQueryRequest CreateBatchRequest(ISerializer serializer)
         {
             throw new InvalidOperationException("Cannot insert this query into the batch");
         }
@@ -243,6 +278,32 @@ namespace Cassandra
         public IStatement SetOutgoingPayload(IDictionary<string, byte[]> payload)
         {
             OutgoingPayload = payload;
+            return this;
+        }
+
+        /// <summary>
+        /// Sets the <see cref="Host"/> that should handle this query.
+        /// <para>
+        /// In the general case, use of this method is <em>heavily discouraged</em> and should only be
+        /// used in the following cases:
+        /// </para>
+        /// <list type="bullet">
+        /// <item><description>Querying node-local tables, such as tables in the <c>system</c> and <c>system_views</c>
+        /// keyspaces.</description></item>
+        /// <item><description>Applying a series of schema changes, where it may be advantageous to execute schema
+        /// changes in sequence on the same node.</description></item>
+        /// </list>
+        /// <para>Configuring a specific host causes the configured <see cref="ILoadBalancingPolicy"/> to be
+        /// completely bypassed. However, if the load balancing policy dictates that the host is at
+        /// distance <see cref="HostDistance.Ignored"/> or there is no active connectivity to the host, the
+        /// request will fail with a <see cref="NoHostAvailableException"/>.</para>
+        /// </summary>
+        /// <param name="host">The host that should be used to handle executions of this statement or null to
+        /// delegate to the configured load balancing policy.</param>
+        /// <returns>this instance</returns>
+        public IStatement SetHost(Host host)
+        {
+            _host = host;
             return this;
         }
     }

@@ -1,8 +1,25 @@
-﻿using System;
+//
+//      Copyright (C) DataStax Inc.
+//
+//   Licensed under the Apache License, Version 2.0 (the "License");
+//   you may not use this file except in compliance with the License.
+//   You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//   Unless required by applicable law or agreed to in writing, software
+//   distributed under the License is distributed on an "AS IS" BASIS,
+//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//   See the License for the specific language governing permissions and
+//   limitations under the License.
+//
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Cassandra.Mapping;
+using Cassandra.Metrics.Internal;
 using Cassandra.Tasks;
 using Cassandra.Tests.Mapping.Pocos;
 using Cassandra.Tests.Mapping.TestData;
@@ -43,6 +60,7 @@ namespace Cassandra.Tests.Mapping
             const int times = 100;
             var users = TestDataHelper.GetUserList();
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>()))
                 .Returns(() => TaskHelper.ToTask(TestDataHelper.GetUsersRowSet(users)))
@@ -75,6 +93,7 @@ namespace Cassandra.Tests.Mapping
         public void Fetch_Throws_ExecuteAsync_Exception()
         {
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>()))
                 .Returns(() => TaskHelper.FromException<RowSet>(new InvalidQueryException("Mocked Exception")))
@@ -93,6 +112,7 @@ namespace Cassandra.Tests.Mapping
         public void Fetch_Throws_PrepareAsync_Exception()
         {
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.PrepareAsync(It.IsAny<string>()))
                 .Returns(() => TaskHelper.FromException<PreparedStatement>(new SyntaxError("Mocked Exception 2")))
@@ -170,7 +190,7 @@ namespace Cassandra.Tests.Mapping
             const int totalPages = 4;
             var rs = TestDataHelper.CreateMultipleValuesRowSet(new[] {"title", "artist"}, new[] {"Once in a Livetime", "Dream Theater"}, pageSize);
             rs.PagingState = new byte[] {1};
-            rs.FetchNextPage = state =>
+            SetFetchNextMethod(rs, state =>
             {
                 var pageNumber = state[0];
                 pageNumber++;
@@ -180,7 +200,7 @@ namespace Cassandra.Tests.Mapping
                     nextRs.PagingState = new[] { pageNumber };
                 }
                 return nextRs;
-            };
+            });
             var mappingClient = GetMappingClient(rs);
             var songs = mappingClient.Fetch<Song>("SELECT * FROM songs");
             //Page to all the values
@@ -196,6 +216,7 @@ namespace Cassandra.Tests.Mapping
             rs.PagingState = new byte[] { 1, 2, 3 };
             BoundStatement stmt = null;
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>()))
                 .Callback<IStatement>(s => stmt = (BoundStatement)s)
@@ -225,6 +246,7 @@ namespace Cassandra.Tests.Mapping
             rs.PagingState = new byte[] {1, 2, 3};
             BoundStatement stmt = null;
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>()))
                 .Callback<IStatement>(s => stmt = (BoundStatement)s)
@@ -269,6 +291,7 @@ namespace Cassandra.Tests.Mapping
             ConsistencyLevel? consistency = null;
             ConsistencyLevel? serialConsistency = null;
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>()))
                 .Callback<IStatement>(b =>
@@ -304,6 +327,7 @@ namespace Cassandra.Tests.Mapping
             var row = new Row(values, rs.Columns, rs.Columns.ToDictionary(c => c.Name, c => c.Index));
             rs.AddRow(row);
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>()))
                 .Returns(TestHelper.DelayedTask(rs, 100))
@@ -346,6 +370,7 @@ namespace Cassandra.Tests.Mapping
             row = new Row(values, rs.Columns, rs.Columns.ToDictionary(c => c.Name, c => c.Index));
             rs.AddRow(row);
             var sessionMock = new Mock<ISession>(MockBehavior.Strict);
+            sessionMock.Setup(s => s.Keyspace).Returns<string>(null);
             sessionMock
                 .Setup(s => s.ExecuteAsync(It.IsAny<BoundStatement>()))
                 .Returns(TestHelper.DelayedTask(rs, 100))
@@ -416,6 +441,11 @@ namespace Cassandra.Tests.Mapping
             Assert.AreEqual(expectedMap, result.Dictionary1);
             Assert.AreEqual(expectedMap, result.Dictionary2);
             Assert.AreEqual(expectedMap, result.Dictionary3);
+        }
+
+        private static void SetFetchNextMethod(RowSet rs, Func<byte[], RowSet> handler)
+        {
+            rs.SetFetchNextPageHandler(pagingState => Task.FromResult(handler(pagingState)), 10000, Mock.Of<IMetricsManager>());
         }
     }
 }

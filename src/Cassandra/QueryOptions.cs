@@ -1,5 +1,5 @@
-﻿//
-//      Copyright (C) 2012-2014 DataStax Inc.
+//
+//      Copyright (C) DataStax Inc.
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -12,6 +12,7 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
+//
 
 using System;
 
@@ -29,6 +30,7 @@ namespace Cassandra
 
         /// <summary>
         /// The default consistency level for queries: <c>ConsistencyLevel.LocalOne</c>.
+        /// For DataStax Astra, this constant should be ignored as the default is LocalQuorum.
         /// </summary>    
         public const ConsistencyLevel DefaultConsistencyLevel = ConsistencyLevel.LocalOne;
 
@@ -47,9 +49,10 @@ namespace Cassandra
         /// </summary>
         public const bool DefaultRetryOnTimeout = true;
 
-        private ConsistencyLevel _consistency = DefaultConsistencyLevel;
+        private ConsistencyLevel? _consistency;
+        private ConsistencyLevel _defaultConsistencyLevel = QueryOptions.DefaultConsistencyLevel;
         private int _pageSize = DefaultPageSize;
-        private ConsistencyLevel _serialConsistency = DefaultSerialConsistencyLevel;
+        private ConsistencyLevel _serialConsistency = QueryOptions.DefaultSerialConsistencyLevel;
         private bool _retryOnTimeout = DefaultRetryOnTimeout;
         private bool _defaultIdempotence = false;
         private bool _prepareOnAllHosts = true;
@@ -78,6 +81,10 @@ namespace Cassandra
             return this;
         }
 
+        internal void SetDefaultConsistencyLevel(ConsistencyLevel consistencyLevel)
+        {
+            _defaultConsistencyLevel = consistencyLevel;
+        }
 
         /// <summary>
         ///  The default consistency level used by queries.
@@ -85,7 +92,7 @@ namespace Cassandra
         /// <returns>the default consistency level used by queries.</returns>
         public ConsistencyLevel GetConsistencyLevel()
         {
-            return _consistency;
+            return _consistency ?? _defaultConsistencyLevel;
         }
 
 
@@ -105,8 +112,7 @@ namespace Cassandra
             _serialConsistency = serialConsistencyLevel;
             return this;
         }
-
-
+        
         /// <summary>
         /// The default serial consistency level used by queries.
         /// </summary>
@@ -115,27 +121,6 @@ namespace Cassandra
         {
             return _serialConsistency;
         }
-
-        /// <summary>
-        /// Gets the serial consistency level of the statement or the default value from the query options.
-        /// </summary>
-        /// <exception cref="ArgumentException" />
-        internal ConsistencyLevel GetSerialConsistencyLevelOrDefault(IStatement statement)
-        {
-            var consistency = GetSerialConsistencyLevel();
-            if (statement.SerialConsistencyLevel != ConsistencyLevel.Any)
-            {
-                consistency = statement.SerialConsistencyLevel;
-            }
-
-            if (!consistency.IsSerialConsistencyLevel())
-            {
-                throw new ArgumentException("Serial consistency level can only be set to LocalSerial or Serial");
-            }
-
-            return consistency;
-        }
-
 
         /// <summary>
         /// Sets the default page size to use for SELECT queries.

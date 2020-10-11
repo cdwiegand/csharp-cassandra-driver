@@ -1,5 +1,5 @@
 //
-//      Copyright (C) 2012-2014 DataStax Inc.
+//      Copyright (C) DataStax Inc.
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
 //   limitations under the License.
 //
 
+using System;
+
 namespace Cassandra
 {
     /// <summary>
@@ -22,17 +24,33 @@ namespace Cassandra
     public class Policies
     {
         /// <summary>
-        ///  The default load balancing policy. 
+        /// <para>
+        /// DEPRECATED: Use <see cref="NewDefaultLoadBalancingPolicy"/> instead. Providing the local datacenter will be mandatory
+        /// in the next major version of the driver.
+        /// </para>
+        /// <para>
+        /// The default load balancing policy.
+        /// </para>  
         /// <para> 
-        /// The default load balancing policy is <see cref="TokenAwarePolicy"/> with <see cref="DCAwareRoundRobinPolicy"/> as child policy.
+        /// The default load balancing policy is <see cref="DefaultLoadBalancingPolicy"/> as a wrapper around
+        /// <see cref="TokenAwarePolicy"/> with <see cref="DCAwareRoundRobinPolicy"/> as child policy.
         /// </para>
         /// </summary>
-        public static ILoadBalancingPolicy DefaultLoadBalancingPolicy
+        public static ILoadBalancingPolicy DefaultLoadBalancingPolicy => 
+            new DefaultLoadBalancingPolicy(new TokenAwarePolicy(new DCAwareRoundRobinPolicy()));
+
+        /// <summary>
+        /// Creates a new instance of the default load balancing policy with the provided local datacenter.
+        /// This is equivalent to:
+        /// <code>
+        /// new DefaultLoadBalancingPolicy(new TokenAwarePolicy(new DCAwareRoundRobinPolicy(localDc)))
+        /// </code>
+        /// </summary>
+        public static ILoadBalancingPolicy NewDefaultLoadBalancingPolicy(string localDc)
         {
-            get
-            {
-                return new TokenAwarePolicy(new DCAwareRoundRobinPolicy());
-            }
+#pragma warning disable 618
+            return new DefaultLoadBalancingPolicy(localDc);
+#pragma warning restore 618
         }
 
         /// <summary>
@@ -47,12 +65,22 @@ namespace Cassandra
                 return new ExponentialReconnectionPolicy(1000, 10 * 60 * 1000);
             }
         }
-
+        
         /// <summary>
-        ///  The default retry policy. <p> The default retry policy is
-        ///  <link>DefaultRetryPolicy</link>.</p>
+        ///  The default retry policy.The default retry policy is <see cref="Cassandra.DefaultRetryPolicy"/>
         /// </summary>
         public static IRetryPolicy DefaultRetryPolicy
+        {
+            get
+            {
+                return new DefaultRetryPolicy();
+            }
+        }
+        
+        /// <summary>
+        ///  The default extended retry policy.The default extended retry policy is <see cref="Cassandra.DefaultRetryPolicy"/>
+        /// </summary>
+        internal static IExtendedRetryPolicy DefaultExtendedRetryPolicy
         {
             get
             {
@@ -167,11 +195,8 @@ namespace Cassandra
         /// <param name="loadBalancingPolicy"> the load balancing policy to use. </param>
         /// <param name="reconnectionPolicy"> the reconnection policy to use. </param>
         /// <param name="retryPolicy"> the retry policy to use.</param>
-        public Policies(ILoadBalancingPolicy loadBalancingPolicy,
-                        IReconnectionPolicy reconnectionPolicy,
-                        IRetryPolicy retryPolicy)
-            : this(loadBalancingPolicy, reconnectionPolicy, retryPolicy, DefaultSpeculativeExecutionPolicy,
-                   DefaultTimestampGenerator)
+        public Policies(ILoadBalancingPolicy loadBalancingPolicy, IReconnectionPolicy reconnectionPolicy, IRetryPolicy retryPolicy)
+            : this(loadBalancingPolicy, reconnectionPolicy, retryPolicy, DefaultSpeculativeExecutionPolicy, DefaultTimestampGenerator)
         {
             //Part of the public API can not be removed
         }
@@ -187,16 +212,34 @@ namespace Cassandra
             _retryPolicy = retryPolicy ?? DefaultRetryPolicy;
             _speculativeExecutionPolicy = speculativeExecutionPolicy ?? DefaultSpeculativeExecutionPolicy;
             _timestampGenerator = timestampGenerator ?? DefaultTimestampGenerator;
+            _extendedRetryPolicy = _retryPolicy.Wrap(DefaultExtendedRetryPolicy);
         }
 
-        /// <summary>
-        /// Sets the current policy as extended retry policy.
-        /// If the current policy is not <see cref="IExtendedRetryPolicy"/>, it creates a wrapper to delegate
-        /// the methods that were not implemented to a default policy.
-        /// </summary>
-        internal void InitializeRetryPolicy(ICluster cluster)
+        private Policies(
+            ILoadBalancingPolicy loadBalancingPolicy,
+            IReconnectionPolicy reconnectionPolicy,
+            IRetryPolicy retryPolicy,
+            ISpeculativeExecutionPolicy speculativeExecutionPolicy,
+            ITimestampGenerator timestampGenerator,
+            IExtendedRetryPolicy extendedRetryPolicy)
         {
-            _extendedRetryPolicy = _retryPolicy.Wrap(null);
+            _loadBalancingPolicy = loadBalancingPolicy ?? throw new ArgumentNullException(nameof(loadBalancingPolicy));
+            _reconnectionPolicy = reconnectionPolicy ?? throw new ArgumentNullException(nameof(reconnectionPolicy));
+            _retryPolicy = retryPolicy ?? throw new ArgumentNullException(nameof(retryPolicy));
+            _speculativeExecutionPolicy = speculativeExecutionPolicy ?? throw new ArgumentNullException(nameof(speculativeExecutionPolicy));
+            _timestampGenerator = timestampGenerator ?? throw new ArgumentNullException(nameof(timestampGenerator));
+            _extendedRetryPolicy = extendedRetryPolicy ?? throw new ArgumentNullException(nameof(extendedRetryPolicy));
+        }
+
+        internal Policies CloneWithExecutionProfilePolicies(IExecutionProfile defaultProfile)
+        {
+            return new Policies(
+                defaultProfile.LoadBalancingPolicy ?? _loadBalancingPolicy,
+                _reconnectionPolicy,
+                _retryPolicy,
+                defaultProfile.SpeculativeExecutionPolicy ?? _speculativeExecutionPolicy,
+                _timestampGenerator,
+                _extendedRetryPolicy);
         }
     }
 }

@@ -1,5 +1,5 @@
 //
-//      Copyright (C) 2012-2014 DataStax Inc.
+//      Copyright (C) DataStax Inc.
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -14,10 +14,7 @@
 //   limitations under the License.
 //
 
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System;
 
 namespace Cassandra
 {
@@ -26,12 +23,18 @@ namespace Cassandra
         /// <summary>
         /// The version that was not supported by the server.
         /// </summary>
-        public ProtocolVersion ProtocolVersion { get; private set; }
+        public ProtocolVersion ProtocolVersion { get; }
+        
+        /// <summary>
+        /// The version with which the server replied.
+        /// </summary>
+        public ProtocolVersion ResponseProtocolVersion { get; }
 
-        public UnsupportedProtocolVersionException(ProtocolVersion protocolVersion, Exception innerException) : 
-            base(string.Format("Protocol version {0} not supported", protocolVersion), innerException)
+        public UnsupportedProtocolVersionException(ProtocolVersion protocolVersion, ProtocolVersion responseProtocolVersion, Exception innerException) : 
+            base($"Protocol version {protocolVersion} not supported", innerException)
         {
             ProtocolVersion = protocolVersion;
+            ResponseProtocolVersion = responseProtocolVersion;
         }
     }
 }

@@ -1,5 +1,5 @@
-﻿//
-//      Copyright (C) 2012-2014 DataStax Inc.
+//
+//      Copyright (C) DataStax Inc.
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -20,11 +20,13 @@ using System.Linq;
 using Cassandra.IntegrationTests.Policies.Util;
 using Cassandra.IntegrationTests.TestBase;
 using Cassandra.IntegrationTests.TestClusterManagement;
+using Cassandra.Tests;
 using NUnit.Framework;
+#pragma warning disable 618
 
 namespace Cassandra.IntegrationTests.Policies.Tests
 {
-    [TestFixture, Category("long")]
+    [TestFixture, Category(TestCategory.Long), Ignore("tests that are not marked with 'short' need to be refactored/deleted")]
     public class ConsistencyTests : TestGlobals
     {
         private PolicyTestTools _policyTestTools = null;
@@ -47,7 +49,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         public void ReplicationFactorOne_TokenAware()
         {
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3);
-            testCluster.Builder = Cluster.Builder().WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()));
+            testCluster.Builder = ClusterBuilder().WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()));
             testCluster.InitClient();
 
             _policyTestTools.CreateSchema(testCluster.Session, 1);
@@ -86,7 +88,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 }
                 catch (Exception e)
                 {
-                    Assert.Fail(String.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
+                    Assert.Fail(string.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
                 }
             }
 
@@ -113,7 +115,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.InitPreparedStatement(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("It must not pass at consistency level {0}.", consistencyLevel));
+                    Assert.Fail(string.Format("It must not pass at consistency level {0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -122,7 +124,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "consistency level EACH_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (UnavailableException)
                 {
@@ -142,7 +144,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.Query(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -151,7 +153,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "EACH_QUORUM ConsistencyLevel is only supported for writes"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (ReadTimeoutException)
                 {
@@ -178,7 +180,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         public void ReplicationFactorTwo_TokenAware()
         {
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3);
-            testCluster.Builder = Cluster.Builder().WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()));
+            testCluster.Builder = ClusterBuilder().WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()));
             testCluster.InitClient();
 
             _policyTestTools.CreateSchema(testCluster.Session, 2);
@@ -223,7 +225,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 }
                 catch (Exception e)
                 {
-                    Assert.Fail(String.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
+                    Assert.Fail(string.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
                 }
             }
 
@@ -250,7 +252,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.InitPreparedStatement(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -259,7 +261,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "consistency level EACH_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (UnavailableException)
                 {
@@ -279,7 +281,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.Query(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -288,7 +290,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "EACH_QUORUM ConsistencyLevel is only supported for writes"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (ReadTimeoutException)
                 {
@@ -315,7 +317,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         public void ReplicationFactorThree_TokenAware()
         {
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3);
-            testCluster.Builder = Cluster.Builder().WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()));
+            testCluster.Builder = ClusterBuilder().WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()));
             testCluster.InitClient();
 
             _policyTestTools.CreateSchema(testCluster.Session, 3);
@@ -356,7 +358,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 }
                 catch (Exception e)
                 {
-                    Assert.Fail(String.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
+                    Assert.Fail(string.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
                 }
             }
 
@@ -383,7 +385,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.InitPreparedStatement(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -392,7 +394,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "consistency level EACH_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (UnavailableException)
                 {
@@ -412,7 +414,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.Query(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -421,7 +423,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "EACH_QUORUM ConsistencyLevel is only supported for writes"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (ReadTimeoutException)
                 {
@@ -448,7 +450,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         public void ReplicationFactorOne_DowngradingConsistencyRetryPolicy()
         {
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3);
-            testCluster.Builder = Cluster.Builder()
+            testCluster.Builder = ClusterBuilder()
                                          .WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()))
                                          .WithRetryPolicy(DowngradingConsistencyRetryPolicy.Instance);
             testCluster.InitClient();
@@ -485,7 +487,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 }
                 catch (Exception e)
                 {
-                    Assert.Fail(String.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
+                    Assert.Fail(string.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
                 }
             }
 
@@ -512,7 +514,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.InitPreparedStatement(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -521,7 +523,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "consistency level EACH_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (UnavailableException)
                 {
@@ -541,7 +543,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.Query(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -550,7 +552,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "EACH_QUORUM ConsistencyLevel is only supported for writes"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (ReadTimeoutException)
                 {
@@ -577,7 +579,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         public void ReplicationFactorTwo_DowngradingConsistencyRetryPolicy()
         {
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3);
-            testCluster.Builder = Cluster.Builder()
+            testCluster.Builder = ClusterBuilder()
                                          .WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()))
                                          .WithRetryPolicy(DowngradingConsistencyRetryPolicy.Instance);
             testCluster.InitClient();
@@ -622,7 +624,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 }
                 catch (Exception e)
                 {
-                    Assert.Fail(String.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
+                    Assert.Fail(string.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
                 }
             }
 
@@ -649,7 +651,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.InitPreparedStatement(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -658,7 +660,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "consistency level EACH_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (UnavailableException)
                 {
@@ -678,7 +680,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.Query(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -687,7 +689,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "EACH_QUORUM ConsistencyLevel is only supported for writes"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (ReadTimeoutException)
                 {
@@ -714,7 +716,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         public void ReplicationFactorThree_TwoDCs_DowngradingConsistencyRetryPolicy()
         {
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3, 3, DefaultMaxClusterCreateRetries, true);
-            testCluster.Builder = Cluster.Builder()
+            testCluster.Builder = ClusterBuilder()
                                          .WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()))
                                          .WithRetryPolicy(DowngradingConsistencyRetryPolicy.Instance);
             testCluster.InitClient();
@@ -766,7 +768,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 }
                 catch (Exception e)
                 {
-                    Assert.Fail(String.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
+                    Assert.Fail(string.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
                 }
             }
 
@@ -784,7 +786,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "EACH_QUORUM ConsistencyLevel is only supported for writes",
                         "ANY ConsistencyLevel is only supported for writes"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
             }
 
@@ -814,7 +816,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.Query(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (ReadTimeoutException)
                 {
@@ -843,7 +845,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         {
             // Seetup
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3, 3, DefaultMaxClusterCreateRetries, true);
-            testCluster.Builder = Cluster.Builder()
+            testCluster.Builder = ClusterBuilder()
                                          .WithLoadBalancingPolicy(new TokenAwarePolicy(new DCAwareRoundRobinPolicy("dc2")))
                                          .WithRetryPolicy(DowngradingConsistencyRetryPolicy.Instance);
             testCluster.InitClient();
@@ -896,7 +898,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 }
                 catch (Exception e)
                 {
-                    Assert.Fail(String.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
+                    Assert.Fail(string.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
                 }
             }
 
@@ -914,7 +916,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "EACH_QUORUM ConsistencyLevel is only supported for writes",
                         "ANY ConsistencyLevel is only supported for writes"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
             }
 
@@ -924,7 +926,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.InitPreparedStatement(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (UnavailableException)
                 {
@@ -944,7 +946,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.Query(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (ReadTimeoutException)
                 {
@@ -972,7 +974,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         public void ReplicationFactorThree_RoundRobin_DowngradingConsistencyRetryPolicy()
         {
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3);
-            testCluster.Builder = Cluster.Builder().WithLoadBalancingPolicy(new RoundRobinPolicy()).WithRetryPolicy(DowngradingConsistencyRetryPolicy.Instance);
+            testCluster.Builder = ClusterBuilder().WithLoadBalancingPolicy(new RoundRobinPolicy()).WithRetryPolicy(DowngradingConsistencyRetryPolicy.Instance);
             testCluster.InitClient();
             TestReplicationFactorThree(testCluster);
         }
@@ -990,7 +992,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
         public void ReplicationFactorThree_TokenAware_DowngradingConsistencyRetryPolicy()
         {
             ITestCluster testCluster = TestClusterManager.GetNonShareableTestCluster(3);
-            testCluster.Builder = Cluster.Builder()
+            testCluster.Builder = ClusterBuilder()
                        .WithLoadBalancingPolicy(new TokenAwarePolicy(new RoundRobinPolicy()))
                        .WithRetryPolicy(DowngradingConsistencyRetryPolicy.Instance);
             testCluster.InitClient();
@@ -1032,7 +1034,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 }
                 catch (Exception e)
                 {
-                    Assert.Fail(String.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
+                    Assert.Fail(string.Format("Test failed at CL.{0} with message: {1}", consistencyLevel, e.Message));
                 }
             }
 
@@ -1059,7 +1061,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.InitPreparedStatement(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -1068,7 +1070,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "consistency level EACH_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (UnavailableException)
                 {
@@ -1088,7 +1090,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                 try
                 {
                     _policyTestTools.Query(testCluster, 12, consistencyLevel);
-                    Assert.Fail(String.Format("Test passed at CL.{0}.", consistencyLevel));
+                    Assert.Fail(string.Format("Test passed at CL.{0}.", consistencyLevel));
                 }
                 catch (InvalidQueryException e)
                 {
@@ -1097,7 +1099,7 @@ namespace Cassandra.IntegrationTests.Policies.Tests
                         "consistency level LOCAL_QUORUM not compatible with replication strategy (org.apache.cassandra.locator.SimpleStrategy)",
                         "EACH_QUORUM ConsistencyLevel is only supported for writes"
                     };
-                    Assert.True(acceptableErrorMessages.Contains(e.Message), String.Format("Received: {0}", e.Message));
+                    Assert.True(acceptableErrorMessages.Contains(e.Message), string.Format("Received: {0}", e.Message));
                 }
                 catch (ReadTimeoutException)
                 {

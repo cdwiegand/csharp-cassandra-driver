@@ -1,5 +1,5 @@
 //
-//      Copyright (C) 2012-2014 DataStax Inc.
+//      Copyright (C) DataStax Inc.
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -31,11 +31,16 @@ namespace Cassandra
         /// </summary>
         internal const int MaximumFrameLength = 256*1024*1024;
 
+        /// <summary>
+        /// The default value for <see cref="get_MaxSchemaAgreementWaitSeconds"/>: 10.
+        /// </summary>
+        public const int DefaultMaxSchemaAgreementWaitSeconds = 10;
+
         private readonly int _port;
         private readonly SSLOptions _sslOptions;
         private CompressionType _compression = CompressionType.NoCompression;
         private IFrameCompressor _compressor;
-        private int _maxSchemaAgreementWaitSeconds = 10;
+        private int _maxSchemaAgreementWaitSeconds = ProtocolOptions.DefaultMaxSchemaAgreementWaitSeconds;
         private ProtocolVersion? _maxProtocolVersion;
 
         /// <summary>

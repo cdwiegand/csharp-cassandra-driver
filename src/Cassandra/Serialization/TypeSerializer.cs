@@ -1,5 +1,5 @@
-﻿//
-//      Copyright (C) 2012-2016 DataStax Inc.
+//
+//      Copyright (C) DataStax Inc.
 //
 //   Licensed under the Apache License, Version 2.0 (the "License");
 //   you may not use this file except in compliance with the License.
@@ -35,6 +35,7 @@ namespace Cassandra.Serialization
         public static readonly TypeSerializer<DateTime> PrimitiveDateTimeSerializer = new DateTimeSerializer();
         public static readonly TypeSerializer<decimal> PrimitiveDecimalSerializer = new DecimalSerializer();
         public static readonly TypeSerializer<double> PrimitiveDoubleSerializer = new DoubleSerializer();
+        public static readonly TypeSerializer<Duration> PrimitiveDurationSerializer = new DurationSerializer(true);
         public static readonly TypeSerializer<float> PrimitiveFloatSerializer = new FloatSerializer();
         public static readonly TypeSerializer<Guid> PrimitiveGuidSerializer = new GuidSerializer();
         public static readonly TypeSerializer<int> PrimitiveIntSerializer = new IntSerializer();
@@ -146,7 +147,7 @@ namespace Cassandra.Serialization
     /// <typeparam name="T">CLR type for this serializer</typeparam>
     public abstract class TypeSerializer<T> : TypeSerializer, ITypeSerializer
     {
-        private Serializer _serializer;
+        private IGenericSerializer _serializer;
         /// <summary>
         /// Gets the CLR type for this serializer.
         /// </summary>
@@ -201,13 +202,13 @@ namespace Cassandra.Serialization
         /// <param name="value">The object to encode.</param>
         public abstract byte[] Serialize(ushort protocolVersion, T value);
 
-        internal object DeserializeChild(byte[] buffer, int offset, int length, ColumnTypeCode typeCode, IColumnInfo typeInfo)
+        internal object DeserializeChild(ushort protocolVersion, byte[] buffer, int offset, int length, ColumnTypeCode typeCode, IColumnInfo typeInfo)
         {
             if (_serializer == null)
             {
                 throw new NullReferenceException("Child serializer can not be null");
             }
-            return _serializer.Deserialize(buffer, offset, length, typeCode, typeInfo);
+            return _serializer.Deserialize((ProtocolVersion)protocolVersion, buffer, offset, length, typeCode, typeInfo);
         }
 
         internal Type GetClrType(ColumnTypeCode typeCode, IColumnInfo typeInfo)
@@ -218,17 +219,26 @@ namespace Cassandra.Serialization
             }
             return _serializer.GetClrType(typeCode, typeInfo);
         }
-
-        internal byte[] SerializeChild(object obj)
+        
+        internal Type GetClrTypeForGraph(ColumnTypeCode typeCode, IColumnInfo typeInfo)
         {
             if (_serializer == null)
             {
                 throw new NullReferenceException("Child serializer can not be null");
             }
-            return _serializer.Serialize(obj);
+            return _serializer.GetClrTypeForGraph(typeCode, typeInfo);
         }
 
-        internal void SetChildSerializer(Serializer serializer)
+        internal byte[] SerializeChild(ushort protocolVersion, object obj)
+        {
+            if (_serializer == null)
+            {
+                throw new NullReferenceException("Child serializer can not be null");
+            }
+            return _serializer.Serialize((ProtocolVersion)protocolVersion, obj);
+        }
+
+        internal void SetChildSerializer(IGenericSerializer serializer)
         {
             _serializer = serializer;
         }

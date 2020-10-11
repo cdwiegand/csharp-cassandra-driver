@@ -1,19 +1,36 @@
-﻿using NUnit.Framework;
+//
+//      Copyright (C) DataStax Inc.
+//
+//   Licensed under the Apache License, Version 2.0 (the "License");
+//   you may not use this file except in compliance with the License.
+//   You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//   Unless required by applicable law or agreed to in writing, software
+//   distributed under the License is distributed on an "AS IS" BASIS,
+//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//   See the License for the specific language governing permissions and
+//   limitations under the License.
+//
+
 using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
 using System.Reflection;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+
 using Cassandra.Serialization;
+using Cassandra.Tasks;
+using Moq;
+
+using NUnit.Framework;
+using NUnit.Framework.Internal;
 using IgnoreAttribute = Cassandra.Mapping.Attributes.IgnoreAttribute;
-using Microsoft.DotNet.InternalAbstractions;
 
 namespace Cassandra.Tests
 {
@@ -32,13 +49,12 @@ namespace Cassandra.Tests
         {
             var columns = new List<CqlColumn>();
             var rowValues = new List<object>();
-            var serializer = new Serializer(ProtocolVersion.MaxSupported);
+            var serializer = new SerializerManager(ProtocolVersion.MaxSupported).GetCurrentSerializer();
             foreach (var kv in valueMap)
             {
                 if (kv.Value != null)
                 {
-                    IColumnInfo typeInfo;
-                    var typeCode = serializer.GetCqlType(kv.Value.GetType(), out typeInfo);
+                    var typeCode = serializer.GetCqlType(kv.Value.GetType(), out IColumnInfo typeInfo);
                     columns.Add(new CqlColumn { Name = kv.Key, TypeCode = typeCode, TypeInfo = typeInfo });
                 }
                 else
@@ -51,7 +67,7 @@ namespace Cassandra.Tests
             return new Row(rowValues.ToArray(), columns.ToArray(), valueMap.ToDictionary(kv => kv.Key, kv => i++));
         }
 
-        public static IEnumerable<Row> CreateRows(IEnumerable<IDictionary<string, object>> valueMapList)
+        public static IEnumerable<IRow> CreateRows(IEnumerable<IDictionary<string, object>> valueMapList)
         {
             return valueMapList.Select(CreateRow);
         }
@@ -60,18 +76,20 @@ namespace Cassandra.Tests
         {
             var columns = new CqlColumn[rowValues.Count];
             var index = 0;
-            var serializer = new Serializer(ProtocolVersion.MaxSupported);
+            var serializer = new SerializerManager(ProtocolVersion.MaxSupported).GetCurrentSerializer();
             foreach (var kv in rowValues)
             {
                 CqlColumn c;
                 if (kv.Value != null)
                 {
-                    IColumnInfo typeInfo;
-                    var typeCode = serializer.GetCqlType(kv.Value.GetType(), out typeInfo);
+                    var typeCode = serializer.GetCqlType(kv.Value.GetType(), out IColumnInfo typeInfo);
                     c = new CqlColumn
                     {
-                        Name = kv.Key, TypeCode = typeCode, TypeInfo = typeInfo,
-                        Type = kv.Value.GetType(), Index = index
+                        Name = kv.Key,
+                        TypeCode = typeCode,
+                        TypeInfo = typeInfo,
+                        Type = kv.Value.GetType(),
+                        Index = index
                     };
                 }
                 else
@@ -79,7 +97,10 @@ namespace Cassandra.Tests
                     // Default to type Text
                     c = new CqlColumn
                     {
-                        Name = kv.Key, TypeCode = ColumnTypeCode.Text, Type = typeof(string), Index = index
+                        Name = kv.Key,
+                        TypeCode = ColumnTypeCode.Text,
+                        Type = typeof(string),
+                        Index = index
                     };
                 }
                 columns[index++] = c;
@@ -123,12 +144,56 @@ namespace Cassandra.Tests
             return new KeyValuePair<TKey, TValue>(key, value);
         }
 
-        public static Host CreateHost(string address, string dc = "dc1", string rack = "rack1", IEnumerable<string> tokens = null)
+        public static Host CreateHost(string address, string dc = "dc1", string rack = "rack1",
+                                      IEnumerable<string> tokens = null, string cassandraVersion = null,
+                                      string dseVersion = null)
         {
-            var h = new Host(new IPEndPoint(IPAddress.Parse(address), ProtocolOptions.DefaultPort), new ConstantReconnectionPolicy(1));
-            h.SetLocationInfo(dc, rack);
-            h.Tokens = tokens;
+            var h = new Host(new IPEndPoint(IPAddress.Parse(address), ProtocolOptions.DefaultPort),
+                             new ConstantReconnectionPolicy(1));
+            h.SetInfo(new DictionaryBasedRow(new Dictionary<string, object>
+            {
+                { "data_center", dc },
+                { "rack", rack },
+                { "tokens", tokens },
+                { "release_version", cassandraVersion },
+                { "dse_version", dseVersion }
+            }));
             return h;
+        }
+
+        internal class DictionaryBasedRow : IRow
+        {
+            private readonly IDictionary<string, object> _values;
+
+            internal DictionaryBasedRow(IDictionary<string, object> values)
+            {
+                _values = values;
+            }
+
+            public T GetValue<T>(string name)
+            {
+                return (T)_values[name];
+            }
+
+            public bool ContainsColumn(string name)
+            {
+                return _values.ContainsKey(name);
+            }
+
+            public bool IsNull(string name)
+            {
+                return _values[name] == null;
+            }
+
+            public T GetValue<T>(int index)
+            {
+                return (T)_values.ElementAt(index).Value;
+            }
+
+            public CqlColumn GetColumn(string name)
+            {
+                return null;
+            }
         }
 
         public static byte GetLastAddressByte(Host h)
@@ -153,7 +218,7 @@ namespace Cassandra.Tests
         {
             var parallelOptions = new ParallelOptions
             {
-                TaskScheduler = new ThreadPerTaskScheduler(), 
+                TaskScheduler = new ThreadPerTaskScheduler(),
                 MaxDegreeOfParallelism = 1000
             };
             Parallel.Invoke(parallelOptions, actions.ToArray());
@@ -233,13 +298,13 @@ namespace Cassandra.Tests
 
                 if (actualValue is IList)
                 {
-                    CollectionAssert.AreEqual((IList) expectedValue, (IList) actualValue, new SimplifiedComparer(), "Values from property {0} do not match", property.Name);
+                    CollectionAssert.AreEqual((IList)expectedValue, (IList)actualValue, new SimplifiedComparer(), "Values from property {0} do not match", property.Name);
                     continue;
                 }
                 SimplifyValues(ref actualValue, ref expectedValue);
                 Assert.AreEqual(expectedValue, actualValue,
                     // ReSharper disable once PossibleNullReferenceException
-                    String.Format("Property {0}.{1} does not match. Expected: {2} but was: {3}", property.DeclaringType.Name, property.Name, expectedValue, actualValue));
+                    string.Format("Property {0}.{1} does not match. Expected: {2} but was: {3}", property.DeclaringType.Name, property.Name, expectedValue, actualValue));
             }
         }
 
@@ -265,10 +330,7 @@ namespace Cassandra.Tests
         public static async Task<T> DelayedTask<T>(T result, int dueTimeMs = 50, Action afterDelay = null)
         {
             await Task.Delay(dueTimeMs).ConfigureAwait(false);
-            if (afterDelay != null)
-            {
-                afterDelay();
-            }
+            afterDelay?.Invoke();
             return result;
         }
 
@@ -279,7 +341,7 @@ namespace Cassandra.Tests
         }
 
         /// <summary>
-        /// Uses the precision 
+        /// Uses the precision
         /// </summary>
         internal static void SimplifyValues(ref object actualValue, ref object expectedValue)
         {
@@ -381,7 +443,6 @@ namespace Cassandra.Tests
         {
             get
             {
-#if !NETCORE
                 switch (Environment.OSVersion.Platform)
                 {
                     case PlatformID.Win32NT:
@@ -390,9 +451,6 @@ namespace Cassandra.Tests
                         return true;
                 }
                 return false;
-#else
-                return RuntimeEnvironment.OperatingSystemPlatform == Platform.Windows;
-#endif
             }
         }
 
@@ -434,15 +492,19 @@ namespace Cassandra.Tests
             {
                 return;
             }
-            var t1 = action();
-            t1.ContinueWith(t =>
+
+            Task.Run(async () =>
             {
-                if (t.Exception != null)
+                try
                 {
-                    // ReSharper disable once AssignNullToNotNullAttribute
-                    tcs.TrySetException(t.Exception.InnerException);
+                    await action().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
                     return;
                 }
+                
                 var received = counter.IncrementReceived();
                 if (received == maxLength)
                 {
@@ -450,14 +512,14 @@ namespace Cassandra.Tests
                     return;
                 }
                 SendNew(action, tcs, counter, maxLength);
-            }, TaskContinuationOptions.ExecuteSynchronously);
+            }).Forget();
         }
 
         public static async Task<Exception> EatUpException(Task task)
         {
             try
             {
-                await task;
+                await task.ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -490,7 +552,7 @@ namespace Cassandra.Tests
 
             var whereColumnsGroup = columnsMatch.Groups[2].Value;
             var whereColumnsRegex = new Regex("([\\w\"]+)");
-            
+
             var whereColumnsNamesMatchCollection = whereColumnsRegex.Matches(whereColumnsGroup);
             var whereCQlColumns = new string[whereColumnsGroup.Count(x => x == '?')];
             var whereCQlColumnsIndex = 0;
@@ -544,7 +606,7 @@ namespace Cassandra.Tests
             {
                 queryColumnsOrder[i] = (i < columns.Length) ? Array.IndexOf(insertColumns, columns[i]) : i;
             }
-            
+
             Assert.AreEqual(expectedValues.Length, cqlParamCount);
             Assert.AreEqual(expectedValues.Length, values.Length);
             for (var i = 0; i < expectedValues.Length; i++)
@@ -552,7 +614,48 @@ namespace Cassandra.Tests
                 Assert.AreEqual(expectedValues[i], values[queryColumnsOrder[i]]);
             }
         }
-        
+
+        internal static void RetryAssert(Action act, int msPerRetry = 5, int maxRetries = 100)
+        {
+            TestHelper.RetryAssertAsync(
+                () =>
+                {
+                    act();
+                    return Task.FromResult(true);
+                },
+                msPerRetry,
+                maxRetries).GetAwaiter().GetResult();
+        }
+
+        internal static async Task RetryAssertAsync(Func<Task> func, int msPerRetry = 2, int maxRetries = 100)
+        {
+            Exception lastException;
+            var i = 0;
+            do
+            {
+                using (new TestExecutionContext.IsolatedContext())
+                {
+                    try
+                    {
+                        await func().ConfigureAwait(false);
+                        return;
+                    }
+                    catch (MockException ex1)
+                    {
+                        lastException = ex1;
+                    }
+                    catch (AssertionException ex2)
+                    {
+                        lastException = ex2;
+                    }
+                }
+
+                await Task.Delay(msPerRetry).ConfigureAwait(false);
+            } while (i++ < maxRetries);
+
+            throw lastException;
+        }
+
         private class SendReceiveCounter
         {
             private int _receiveCounter;
@@ -571,46 +674,31 @@ namespace Cassandra.Tests
 
         internal class TestLoggerHandler : Logger.ILoggerHandler
         {
-            private readonly ConcurrentQueue<Tuple<string, string, object[]>> _messages =
-                new ConcurrentQueue<Tuple<string, string, object[]>>();
+            public long WarningCount = 0;
 
             public void Error(Exception ex)
             {
-                _messages.Enqueue(Tuple.Create("error", (string)null, new object[] { ex }));
             }
 
             public void Error(string message, Exception ex = null)
             {
-                _messages.Enqueue(Tuple.Create("error", message, new object[] { ex }));
             }
 
             public void Error(string message, params object[] args)
             {
-                _messages.Enqueue(Tuple.Create("error", message, args));
             }
 
             public void Verbose(string message, params object[] args)
             {
-                _messages.Enqueue(Tuple.Create("verbose", message, args));
             }
 
             public void Info(string message, params object[] args)
             {
-                _messages.Enqueue(Tuple.Create("info", message, args));
             }
 
             public void Warning(string message, params object[] args)
             {
-                _messages.Enqueue(Tuple.Create("warning", message, args));
-            }
-
-            public IEnumerable<Tuple<string, string, object[]>> DequeueAllMessages()
-            {
-                Tuple<string, string, object[]> value;
-                while (_messages.TryDequeue(out value))
-                {
-                    yield return value;
-                }
+                Interlocked.Increment(ref WarningCount);
             }
         }
 
@@ -654,6 +742,40 @@ namespace Cassandra.Tests
             public IEnumerable<Host> NewQueryPlan(string keyspace, IStatement query)
             {
                 return !_useRoundRobin ? _hosts : _childPolicy.NewQueryPlan(keyspace, query);
+            }
+        }
+
+        /// <summary>
+        /// A policy only suitable for testing that lets you specify the handlers for the query plan and distance
+        /// methods.
+        /// </summary>
+        internal class CustomLoadBalancingPolicy : ILoadBalancingPolicy
+        {
+            private ICluster _cluster;
+            private readonly Func<ICluster, Host, HostDistance> _distanceHandler;
+            private readonly Func<ICluster, string, IStatement, IEnumerable<Host>> _queryPlanHandler;
+
+            public CustomLoadBalancingPolicy(
+                Func<ICluster, string, IStatement, IEnumerable<Host>> queryPlanHandler = null,
+                Func<ICluster, Host, HostDistance> distanceHandler = null)
+            {
+                _queryPlanHandler = queryPlanHandler ?? ((cluster, ks, statement) => cluster.AllHosts());
+                _distanceHandler = distanceHandler ?? ((_, __) => HostDistance.Local);
+            }
+
+            public void Initialize(ICluster cluster)
+            {
+                _cluster = cluster;
+            }
+
+            public HostDistance Distance(Host host)
+            {
+                return _distanceHandler(_cluster, host);
+            }
+
+            public IEnumerable<Host> NewQueryPlan(string keyspace, IStatement query)
+            {
+                return _queryPlanHandler(_cluster, keyspace, query);
             }
         }
     }
